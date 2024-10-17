@@ -15,7 +15,7 @@ setup(
     ],
     entry_points={
         'console_scripts': [
-            'exceltodump=exceltodump.cli:main',
+            'exceltodump=exceltodump.main:main',
         ],
     },
     classifiers=[

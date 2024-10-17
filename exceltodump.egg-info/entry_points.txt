@@ -1,0 +1,2 @@
+[console_scripts]
+exceltodump = exceltodump.main:main

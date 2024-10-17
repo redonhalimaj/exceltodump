@@ -1,6 +1,0 @@
-# config/config.yaml
-
-regex_patterns:
-  operation: '#op\[(.*?)\]\((.*?)\)'
-  parameter: '#p\[(.*?)\]'
-  interaction: '\[(.*?)\]'

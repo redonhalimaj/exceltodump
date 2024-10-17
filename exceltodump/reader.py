@@ -1,46 +1,41 @@
 # exceltodump/reader.py
 
+import json
 import pandas as pd
 import re
 import logging
-from collections import defaultdict
-
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
 # Define regex patterns
-OP_PATTERN = re.compile(r"#op\[(.*?)\]\((.*?)\)")
-PARAM_PATTERN = re.compile(r"#p\[(.*?)\]")
-INTERACTION_PATTERN = re.compile(r"\[(.*?)\]")
+op_pattern = r"#op\[(.*?)\]\((.*?)\)"       # Match operations like #op[Op Name](Op Param)
+param_pattern = r"#p\[(.*?)\]"            # Match parameters like #p[Param Name]
+interaction_pattern = r"\[(.*?)\]"       # Match anything inside square brackets []
 
 def categorize_param_value(param_value):
     """Categorize parameter value based on its type."""
     param_value = param_value.strip()
-    if re.match(r"^[0-9]+(\.[0-9]+)?$", param_value):  # Numeric
+    if re.match(r"^[0-9]+(\.[0-9]+)?$", param_value):  # Match numbers (integers/floats)
         return 'Numeric'
-    elif re.match(r'^"A[0-9]+"$', param_value):  # Text (e.g., "A2")
+    elif re.match(r'^"A[0-9]+"$', param_value):        # Match signal identifiers (e.g., "A2", "A3")
         return 'Text'
-    elif re.match(r'^"TV_[A-Za-z0-9_]+"$', param_value):  # Text (e.g., "TV_Signal1")
+    elif re.match(r'^"TV_[A-Za-z0-9_]+"$', param_value):  # Match signal/variable names like "TV_Signal1"
         return 'Text'
-    elif re.match(r'^(\d+ sec|[0-9]+ min)$', param_value):  # Text (e.g., "10 sec")
+    elif re.match(r'^(\d+ sec|[0-9]+ min)$', param_value):  # Match time or duration (e.g., "10 sec")
         return 'Text'
-    elif re.match(r'^"(==|!=|>=|<=|>|<)"$', param_value):  # Comparison
+    elif re.match(r'^"(==|!=|>=|<=|>|<)"$', param_value):  # Match comparison operators enclosed in quotes
         return 'Comparison'
     else:
-        logging.warning(f"Uncategorized parameter value: {param_value}. Defaulting to 'Text'.")
         return 'Text'
 
 def extract_operations_params(text, categorized_params):
-    """Extract operations and parameters from the given text and categorize them."""
     if not isinstance(text, str):
-        return [], [], categorized_params  # Return empty lists if text is not valid
+        return [], [], categorized_params  # Return empty lists if the text is not a valid string
 
     # Extract operations and parameters
-    operations = OP_PATTERN.findall(text)
-    parameters = PARAM_PATTERN.findall(text)
+    operations = re.findall(op_pattern, text)
+    parameters = re.findall(param_pattern, text)
 
     # Extract all items inside square brackets
-    all_descriptions = INTERACTION_PATTERN.findall(text)
+    all_descriptions = re.findall(interaction_pattern, text)
 
     # Remove descriptions that are operations (#op[...]) or parameters (#p[...])
     descriptions = [
@@ -69,17 +64,21 @@ def extract_operations_params(text, categorized_params):
                 continue
             category = categorize_param_value(param)
             if category == 'Text':
-                categorized_params["Text"].append(param)
+                if param not in categorized_params["Text"]:
+                    categorized_params["Text"].append(param)
                 param_placeholders.append("Auto_Param_Text")
             elif category == 'Numeric':
-                categorized_params["Numeric"].append(param)
+                if param not in categorized_params["Numeric"]:
+                    categorized_params["Numeric"].append(param)
                 param_placeholders.append("Auto_Param_Numeric")
             elif category == 'Comparison':
-                categorized_params["Comparison"].append(param)
+                if param not in categorized_params["Comparison"]:
+                    categorized_params["Comparison"].append(param)
                 param_placeholders.append("Auto_Param_Comparison")
             else:
                 # Fallback to 'Text' for any unforeseen categories
-                categorized_params["Text"].append(param)
+                if param not in categorized_params["Text"]:
+                    categorized_params["Text"].append(param)
                 param_placeholders.append("Auto_Param_Text")
             param_details.append({"category": category, "value": param})
 
@@ -97,59 +96,85 @@ def extract_operations_params(text, categorized_params):
     return descriptions, cleaned_operations, categorized_params
 
 def read_excel(file_path):
-    """Read and process the Excel file to extract test elements and test cases."""
+    """
+    Reads the Excel file and processes it to generate output_data.
+
+    Args:
+        file_path (str): Path to the Excel file.
+
+    Returns:
+        dict: Processed data.
+    """
     try:
         excel_data = pd.read_excel(file_path)
         logging.info(f"Excel file '{file_path}' loaded successfully.")
     except FileNotFoundError:
-        logging.error(f"Error: Excel file '{file_path}' not found.")
+        logging.error(f"Excel file '{file_path}' not found.")
         raise
     except Exception as e:
-        logging.error(f"Error reading Excel file '{file_path}': {e}")
+        logging.error(f"Error loading Excel file '{file_path}': {e}")
         raise
 
     # Prepare dictionary to store the data
     output_data = {}
 
-    # Global categorized parameters using sets for uniqueness
+    # Global categorized parameters
     categorized_params = {
-        "Text": set(),
-        "Numeric": set(),
-        "Comparison": set()
+        "Text": [],
+        "Numeric": [],
+        "Comparison": []
     }
 
-    # Columns to process
-    columns_to_process = ['Precondition', 'Action', 'Expected Result']
-
-    # Apply extraction to the specified columns
+    # Apply extraction to the 'Precondition', 'Action', and 'Expected Result' columns
     for index, row in excel_data.iterrows():
         row_data = {}
         test_elements = {}
         test_case_operations = []
 
-        for column in columns_to_process:
-            cell_content = row.get(column)
-            if isinstance(cell_content, str) and cell_content.strip():
-                descriptions, ops, categorized_params = extract_operations_params(
-                    cell_content, categorized_params)
-                test_elements[column.replace(' ', '_')] = {
-                    "Descriptions": descriptions,
-                    "Operations": ops  # Keep operations as is for detailed info
-                }
-                # Collect operations for testcase
-                test_case_operations.extend(ops)
+        # Process Precondition
+        if isinstance(row.get('Precondition'), str) and row['Precondition'].strip():
+            descriptions, ops, categorized_params = extract_operations_params(
+                row['Precondition'], categorized_params)
+            test_elements['Precondition'] = {
+                "Descriptions": descriptions,
+                "Operations": ops  # Keep operations as is for detailed info
+            }
+            # Collect operations for testcase
+            test_case_operations.extend(ops)
+
+        # Process Action
+        if isinstance(row.get('Action'), str) and row['Action'].strip():
+            descriptions, ops, categorized_params = extract_operations_params(
+                row['Action'], categorized_params)
+            test_elements['Action'] = {
+                "Descriptions": descriptions,
+                "Operations": ops  # Keep operations as is for detailed info
+            }
+            # Collect operations for testcase
+            test_case_operations.extend(ops)
+
+        # Process Expected Result
+        if isinstance(row.get('Expected Result'), str) and row['Expected Result'].strip():
+            descriptions, ops, categorized_params = extract_operations_params(
+                row['Expected Result'], categorized_params)
+            test_elements['Expected_Result'] = {
+                "Descriptions": descriptions,
+                "Operations": ops  # Keep operations as is for detailed info
+            }
+            # Collect operations for testcase
+            test_case_operations.extend(ops)
 
         # Add test-elements and testcase to row_data
         row_data['test-elements'] = test_elements
         row_data['testcase'] = test_case_operations
 
         # Add row data to output if it contains any extracted information
-        if test_elements or test_case_operations:
+        if row_data:
             output_data[f"Row_{index}"] = row_data
 
-    # Convert sets to sorted lists
+    # Add the grouped global parameters to the output data
     output_data["Generated_Parameters"] = {
-        key: sorted(list(value)) for key, value in categorized_params.items() if value
+        key: value for key, value in categorized_params.items() if value  # Include only non-empty categories
     }
 
     return output_data
