@@ -83,12 +83,12 @@ You should see the help message detailing usage instructions.
 
 ## Usage
 
-**exceltodump** is executed via the command line and requires a positional argument for the Excel file path.
+**exceltodump** is executed via the command line and requires two positional arguments, one for the Excel file path and the other the corresponding projec-dump.xml.
 
 ### Command Syntax
 
 ```bash
-exceltodump <excel_file>
+exceltodump <excel_file> <project-dump.xml>
 ```
 - `<excel_file>`: Path to the Excel file (e.g., `test.xlsx`).
 
@@ -263,7 +263,7 @@ This project is licensed under the MIT License.
 
 ## Contact
 
-For any questions, issues, or suggestions, please open an issue in the repository or contact the maintainer at your.email@example.com.
+For any questions, issues, or suggestions, please open an issue in the repository or contact the maintainer at redon_halimaj@hotmail.com.
 
 **Happy Testing!**
 
